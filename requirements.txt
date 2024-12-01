@@ -1,12 +1,13 @@
 altgraph==0.17.4
-auto-py-to-exe==2.44.4
 bottle==0.13.2
 bottle-websocket==0.2.9
 certifi==2024.8.30
 charset-normalizer==3.4.0
 click==8.1.7
 colorama==0.4.6
+cx_Freeze==7.2.7
 Eel==0.18.1
+filelock==3.16.1
 future==1.0.0
 gevent==24.11.1
 gevent-websocket==0.10.1
@@ -15,6 +16,7 @@ idna==3.10
 markdown-it-py==3.0.0
 mdurl==0.1.2
 packaging==24.2
+patchelf==0.17.2.1
 prompt-toolkit==1.0.14
 Pygments==2.18.0
 pyinstaller==6.11.1

@@ -12,7 +12,8 @@ from consts import (
     TARGETED_FUNDS_OPS_SUBSIDIES_HEADERS,
     BASIC_ORGS_HEADERS,
     QUALITY_ORGS_HEADERS,
-    BUILDING_EXEC_INFO_HEADERS
+    BUILDING_EXEC_INFO_HEADERS,
+    UNAVAILABLE_ORGS_HEADERS
 )
 
 
@@ -108,6 +109,31 @@ def download_data(
     }
 
 
+def write_sheet(
+    workbook: xlsxwriter.Workbook,
+    sheet_name: str,
+    rows: list[list[str]],
+    headers: list[str]
+) -> None:
+    worksheet = workbook.add_worksheet(sheet_name)
+    worksheet.write_row('A1', headers)
+
+    for idx, row in enumerate(rows):
+        for col, val in enumerate(row):
+            if col == 0:
+                worksheet.write_url(idx + 1, 0, f"https://bus.gov.ru/info-card/{row[0]}", string=str(row[0]))
+                continue
+            worksheet.write(idx + 1, col, val)
+
+    column_settings = [{"header": header} for header in headers]
+    worksheet.add_table(0, 0, len(rows), len(headers) - 1, {
+        "columns": column_settings,
+        "autofilter": True
+    })
+
+    worksheet.autofit()
+
+
 def generate_xlsx(
     regions: list[str],
     vgu_name: list[str],
@@ -129,6 +155,7 @@ def generate_xlsx(
     building_exec_info_rows = []
     targeted_funds_ops_budget_rows = []
     targeted_funds_ops_subsidies_rows = []
+    unavailable_orgs_rows = []
 
     for agency_id, current_org in tqdm(basic_orgs_data.items()):
         quality_org_data = quality_orgs_data.get(str(agency_id))
@@ -157,6 +184,7 @@ def generate_xlsx(
         act_name = current_org["agenciesData"]["commontab.act.name"][0]
 
         basic_orgs_data_rows.append([
+            agency_id,
             get_optional_field_value(org_name),
             get_optional_field_value(short_org_name),
             get_optional_field_value(public_law_education),
@@ -184,6 +212,7 @@ def generate_xlsx(
         if quality_org_data.get("scopeWithRatingsDtos"):
             rating_details = quality_org_data["scopeWithRatingsDtos"][0]["ratingDetailsDto"][0]
             quality_info_rows.append([
+                agency_id,
                 get_optional_field_value(org_name),
                 get_optional_field_value(short_org_name),
                 quality_org_data["ratingYear"],
@@ -202,6 +231,7 @@ def generate_xlsx(
         for i in range(0, len(agencies_tasks), 3):
             if "itemData" in agencies_tasks[i]:
                 building_exec_info_rows.append([
+                    agency_id,
                     get_optional_field_value(org_name),
                     get_optional_field_value(short_org_name),
                     "Услуги",
@@ -214,6 +244,7 @@ def generate_xlsx(
         for i in range(0, len(agencies_works), 2):
             if "itemData" in agencies_works[i] and agencies_works[i]["itemData"]:
                 building_exec_info_rows.append([
+                    agency_id,
                     get_optional_field_value(org_name),
                     get_optional_field_value(short_org_name),
                     "Работы",
@@ -224,6 +255,7 @@ def generate_xlsx(
 
         for funds_budget_op in current_org.get("budgetInvestmentsTable"):
             targeted_funds_ops_budget_rows.append([
+                agency_id,
                 get_optional_field_value(org_name),
                 get_optional_field_value(short_org_name),
                 current_org["budgetOperation"]["budget.operation.okato"][0],
@@ -236,6 +268,7 @@ def generate_xlsx(
 
         for funds_subsidies_op in current_org.get("budgetSubsidiesTable"):
             targeted_funds_ops_subsidies_rows.append([
+                agency_id,
                 get_optional_field_value(org_name),
                 get_optional_field_value(short_org_name),
                 current_org["budgetOperation"]["budget.operation.okato"][0],
@@ -247,69 +280,24 @@ def generate_xlsx(
                 funds_subsidies_op["sumPlannedReceips"][0]
             ])
 
+    for org in download_data_result["unavailableOrgsBasicData"]:
+        unavailable_orgs_rows.append([
+            org["agencyId"],
+            org["fullName"],
+            org["fullAddress"],
+            org["phone"],
+            org["webSite"]
+        ])
+
     workbook = xlsxwriter.Workbook(f"Данные bus.gov.ru от {datetime.now().strftime('%d.%m.%Y %H:%M')}.xlsx")
 
-    basic_orgs_worksheet = workbook.add_worksheet("Общая информация")
-    quality_info_worksheet = workbook.add_worksheet("Независимая оценка качества")
-    building_exec_info_worksheet = workbook.add_worksheet("Гос. здание и его исполнения")
-    targeted_funds_ops_budget_worksheet = workbook.add_worksheet("Операции с бюджет. инвестициями")
-    targeted_funds_ops_subsidies_worksheet = workbook.add_worksheet("Операции с субсидиями")
-
-    basic_orgs_worksheet.write_row('A1', BASIC_ORGS_HEADERS)
-    quality_info_worksheet.write_row('A1', QUALITY_ORGS_HEADERS)
-    building_exec_info_worksheet.write_row('A1', BUILDING_EXEC_INFO_HEADERS)
-    targeted_funds_ops_budget_worksheet.write_row('A1', TARGETED_FUNDS_OPS_BUDGET_HEADERS)
-    targeted_funds_ops_subsidies_worksheet.write_row('A1', TARGETED_FUNDS_OPS_SUBSIDIES_HEADERS)
-
-    for row in basic_orgs_data_rows:
-        basic_orgs_worksheet.write_row(basic_orgs_worksheet.dim_rowmax + 1, 0, row)
-
-    column_settings = [{"header": header} for header in BASIC_ORGS_HEADERS]
-    basic_orgs_worksheet.add_table(0, 0, len(basic_orgs_data_rows), len(BASIC_ORGS_HEADERS) - 1, {
-        "columns": column_settings,
-        "autofilter": True
-    })
-
-    for row in quality_info_rows:
-        quality_info_worksheet.write_row(quality_info_worksheet.dim_rowmax + 1, 0, row)
-
-    column_settings = [{"header": header} for header in QUALITY_ORGS_HEADERS]
-    quality_info_worksheet.add_table(0, 0, len(quality_info_rows), len(QUALITY_ORGS_HEADERS) - 1, {
-        "columns": column_settings,
-        "autofilter": True
-    })
-
-    for row in building_exec_info_rows:
-        building_exec_info_worksheet.write_row(building_exec_info_worksheet.dim_rowmax + 1, 0, row)
-
-    column_settings = [{"header": header} for header in BUILDING_EXEC_INFO_HEADERS]
-    building_exec_info_worksheet.add_table(0, 0, len(building_exec_info_rows), len(BUILDING_EXEC_INFO_HEADERS) - 1, {
-        "columns": column_settings,
-        "autofilter": True
-    })
-
-    for row in targeted_funds_ops_budget_rows:
-        targeted_funds_ops_budget_worksheet.write_row(targeted_funds_ops_budget_worksheet.dim_rowmax + 1, 0, row)
-
-    column_settings = [{"header": header} for header in TARGETED_FUNDS_OPS_BUDGET_HEADERS]
-    targeted_funds_ops_budget_worksheet.add_table(0, 0, len(targeted_funds_ops_budget_rows), len(TARGETED_FUNDS_OPS_BUDGET_HEADERS) - 1, {
-        "columns": column_settings,
-        "autofilter": True
-    })
-
-    for row in targeted_funds_ops_subsidies_rows:
-        targeted_funds_ops_subsidies_worksheet.write_row(targeted_funds_ops_subsidies_worksheet.dim_rowmax + 1, 0, row)
-
-    column_settings = [{"header": header} for header in TARGETED_FUNDS_OPS_SUBSIDIES_HEADERS]
-    targeted_funds_ops_subsidies_worksheet.add_table(0, 0, len(targeted_funds_ops_subsidies_rows), len(TARGETED_FUNDS_OPS_SUBSIDIES_HEADERS) - 1, {
-        "columns": column_settings,
-        "autofilter": True
-    })
-
-    basic_orgs_worksheet.autofit()
-    quality_info_worksheet.autofit()
-    building_exec_info_worksheet.autofit()
-    targeted_funds_ops_budget_worksheet.autofit()
-    targeted_funds_ops_subsidies_worksheet.autofit()
+    write_sheet(workbook, "Общая информация", basic_orgs_data_rows, BASIC_ORGS_HEADERS)
+    write_sheet(workbook, "Независимая оценка качества", quality_info_rows, QUALITY_ORGS_HEADERS)
+    write_sheet(workbook, "Гос. здание и его исполнения", building_exec_info_rows, BUILDING_EXEC_INFO_HEADERS)
+    write_sheet(workbook, "Операции с бюджет. инвестициями", targeted_funds_ops_budget_rows,
+                TARGETED_FUNDS_OPS_BUDGET_HEADERS)
+    write_sheet(workbook, "Операции с субсидиями", targeted_funds_ops_subsidies_rows,
+                TARGETED_FUNDS_OPS_SUBSIDIES_HEADERS)
+    write_sheet(workbook, "Организации без данных", unavailable_orgs_rows, UNAVAILABLE_ORGS_HEADERS)
 
     workbook.close()
