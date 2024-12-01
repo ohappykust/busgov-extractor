@@ -3,7 +3,7 @@ from typing import Any
 import requests
 import xlsxwriter
 from colorama import Back
-from future.backports.datetime import datetime
+from datetime import datetime
 
 from tqdm import tqdm
 
@@ -13,7 +13,7 @@ from consts import (
     BASIC_ORGS_HEADERS,
     QUALITY_ORGS_HEADERS,
     BUILDING_EXEC_INFO_HEADERS,
-    UNAVAILABLE_ORGS_HEADERS
+    UNAVAILABLE_ORGS_HEADERS, YEARS
 )
 
 
@@ -67,22 +67,23 @@ def download_data(
 
     all_orgs_agency_ids = [org["agencyId"] for org in all_orgs_data["orgs"]]
 
-    print("(2/4) Загрузка информации об организациях")
+    basic_orgs_data = {year: dict() for year in YEARS}
+    unavailable_orgs_basic_data = {year: list() for year in YEARS}
 
-    basic_orgs_data_url = "https://bus.gov.ru/public-rest/api/agency/compare?selectedYear=2023&compareAgencyIds="
-    basic_orgs_data = {}
-    unavailable_orgs_basic_data = []
+    for year in YEARS:
+        print(f"(2/4) Загрузка информации об организациях за {year} год")
+        basic_orgs_data_url = f"https://bus.gov.ru/public-rest/api/agency/compare?selectedYear={year}&compareAgencyIds="
 
-    for agency_id in tqdm(all_orgs_agency_ids):
-        basic_org_data_response = requests.get(f"{basic_orgs_data_url}{agency_id}", headers=headers)
+        for agency_id in tqdm(all_orgs_agency_ids):
+            basic_org_data_response = requests.get(f"{basic_orgs_data_url}{agency_id}", headers=headers)
 
-        if not basic_org_data_response.ok:
-            unavailable_orgs_basic_data.append(
-                next(org for org in all_orgs_data["orgs"] if org["agencyId"] == agency_id)
-            )
-            continue
+            if not basic_org_data_response.ok:
+                unavailable_orgs_basic_data[year].append(
+                    next(org for org in all_orgs_data["orgs"] if org["agencyId"] == agency_id)
+                )
+                continue
 
-        basic_orgs_data[agency_id] = basic_org_data_response.json()
+            basic_orgs_data[year][agency_id] = basic_org_data_response.json()
 
     print("(3/4) Загрузка оценок качества организаций")
 
@@ -119,11 +120,7 @@ def write_sheet(
     worksheet.write_row('A1', headers)
 
     for idx, row in enumerate(rows):
-        for col, val in enumerate(row):
-            if col == 0:
-                worksheet.write_url(idx + 1, 0, f"https://bus.gov.ru/info-card/{row[0]}", string=str(row[0]))
-                continue
-            worksheet.write(idx + 1, col, val)
+        worksheet.write_row(worksheet.dim_rowmax + 1, 0, row)
 
     column_settings = [{"header": header} for header in headers]
     worksheet.add_table(0, 0, len(rows), len(headers) - 1, {
@@ -157,139 +154,145 @@ def generate_xlsx(
     targeted_funds_ops_subsidies_rows = []
     unavailable_orgs_rows = []
 
-    for agency_id, current_org in tqdm(basic_orgs_data.items()):
-        quality_org_data = quality_orgs_data.get(str(agency_id))
+    for year in tqdm(YEARS):
+        for agency_id, current_org in tqdm(basic_orgs_data[year].items()):
+            quality_org_data = quality_orgs_data.get(str(agency_id))
 
-        org_name = current_org["agenciesData"]["commontab.name"][0]
-        short_org_name = current_org["agenciesData"]["commontab.short_name"][0]
-        public_law_education = current_org["agenciesData"]["commontab.ppo.name"][0]
-        func_body = current_org["agenciesData"]["commontab.founderAgency.shortClientName"][0]
-        grbs_code = current_org["agenciesData"]["commontab.rgbs.code.chapter"][0]
-        rbs_agency_name = current_org["agenciesData"]["commontab.rbsAgency.name"][0]
-        org_type = current_org["agenciesData"]["commontab.agency.type"][0]
-        org_kind = current_org["agenciesData"]["commontab.agency.kind"][0]
-        okato = current_org["agenciesData"]["commontab.okato"][0]
-        okfs_ownership_type = current_org["agenciesData"]["commontab.okfs.name"][0]
-        okfs_ownership_kind = current_org["agenciesData"]["commontab.okopf.kind"][0]
-        actual_location_address = current_org["agenciesData"]["commontab.agencyAddress"][0]
-        supervisor = current_org["agenciesData"]["commontab.manager"][0]
-        telephone = current_org["agenciesData"]["commontab.manager.phone"][0]
-        url = current_org["agenciesData"]["commontab.website"][0]
-        email = current_org["agenciesData"]["commontab.email"][0]
-        parent_name = current_org["agenciesData"]["commontab.branch.parent.name"][0]
-        act_type = current_org["agenciesData"]["commontab.act.type"][0]
-        approver_organization_name = current_org["agenciesData"]["commontab.act.approverOrganizationName"][0]
-        act_date = current_org["agenciesData"]["commontab.act.date"][0]
-        act_number = current_org["agenciesData"]["commontab.act.number"][0]
-        act_name = current_org["agenciesData"]["commontab.act.name"][0]
+            org_name = current_org["agenciesData"]["commontab.name"][0]
+            short_org_name = current_org["agenciesData"]["commontab.short_name"][0]
+            public_law_education = current_org["agenciesData"]["commontab.ppo.name"][0]
+            func_body = current_org["agenciesData"]["commontab.founderAgency.shortClientName"][0]
+            grbs_code = current_org["agenciesData"]["commontab.rgbs.code.chapter"][0]
+            rbs_agency_name = current_org["agenciesData"]["commontab.rbsAgency.name"][0]
+            org_type = current_org["agenciesData"]["commontab.agency.type"][0]
+            org_kind = current_org["agenciesData"]["commontab.agency.kind"][0]
+            okato = current_org["agenciesData"]["commontab.okato"][0]
+            okfs_ownership_type = current_org["agenciesData"]["commontab.okfs.name"][0]
+            okfs_ownership_kind = current_org["agenciesData"]["commontab.okopf.kind"][0]
+            actual_location_address = current_org["agenciesData"]["commontab.agencyAddress"][0]
+            supervisor = current_org["agenciesData"]["commontab.manager"][0]
+            telephone = current_org["agenciesData"]["commontab.manager.phone"][0]
+            url = current_org["agenciesData"]["commontab.website"][0]
+            email = current_org["agenciesData"]["commontab.email"][0]
+            parent_name = current_org["agenciesData"]["commontab.branch.parent.name"][0]
+            act_type = current_org["agenciesData"]["commontab.act.type"][0]
+            approver_organization_name = current_org["agenciesData"]["commontab.act.approverOrganizationName"][0]
+            act_date = current_org["agenciesData"]["commontab.act.date"][0]
+            act_number = current_org["agenciesData"]["commontab.act.number"][0]
+            act_name = current_org["agenciesData"]["commontab.act.name"][0]
 
-        basic_orgs_data_rows.append([
-            agency_id,
-            get_optional_field_value(org_name),
-            get_optional_field_value(short_org_name),
-            get_optional_field_value(public_law_education),
-            get_optional_field_value(func_body),
-            get_optional_field_value(grbs_code),
-            get_optional_field_value(rbs_agency_name),
-            get_optional_field_value(org_type),
-            get_optional_field_value(org_kind),
-            get_optional_field_value(okato),
-            get_optional_field_value(okfs_ownership_type),
-            get_optional_field_value(okfs_ownership_kind),
-            get_optional_field_value(actual_location_address),
-            get_optional_field_value(supervisor),
-            get_optional_field_value(telephone),
-            get_optional_field_value(url),
-            get_optional_field_value(email),
-            get_optional_field_value(parent_name),
-            get_optional_field_value(act_type),
-            get_optional_field_value(approver_organization_name),
-            get_optional_field_value(act_date),
-            get_optional_field_value(act_number),
-            get_optional_field_value(act_name)
-        ])
-
-        if quality_org_data.get("scopeWithRatingsDtos"):
-            rating_details = quality_org_data["scopeWithRatingsDtos"][0]["ratingDetailsDto"][0]
-            quality_info_rows.append([
+            basic_orgs_data_rows.append([
                 agency_id,
                 get_optional_field_value(org_name),
                 get_optional_field_value(short_org_name),
-                quality_org_data["ratingYear"],
-                get_optional_field_value(
-                    rating_details["organizationGroup"]["groupName"]
-                    if rating_details["organizationGroup"] else None),
-                get_optional_field_value(rating_details["globalPlaceValue"]),
-                get_optional_field_value(rating_details["opennessValue"]),
-                get_optional_field_value(rating_details["comfortValue"]),
-                get_optional_field_value(rating_details["timeoutValue"]),
-                get_optional_field_value(rating_details["goodwillValue"]),
-                get_optional_field_value(rating_details["contentmentValue"])
+                year,
+                get_optional_field_value(public_law_education),
+                get_optional_field_value(func_body),
+                get_optional_field_value(grbs_code),
+                get_optional_field_value(rbs_agency_name),
+                get_optional_field_value(org_type),
+                get_optional_field_value(org_kind),
+                get_optional_field_value(okato),
+                get_optional_field_value(okfs_ownership_type),
+                get_optional_field_value(okfs_ownership_kind),
+                get_optional_field_value(actual_location_address),
+                get_optional_field_value(supervisor),
+                get_optional_field_value(telephone),
+                get_optional_field_value(url),
+                get_optional_field_value(email),
+                get_optional_field_value(parent_name),
+                get_optional_field_value(act_type),
+                get_optional_field_value(approver_organization_name),
+                get_optional_field_value(act_date),
+                get_optional_field_value(act_number),
+                get_optional_field_value(act_name)
             ])
 
-        agencies_tasks = current_org.get("agenciesTasks", {}).get(f"value_{agency_id}", [])
-        for i in range(0, len(agencies_tasks), 3):
-            if "itemData" in agencies_tasks[i]:
-                building_exec_info_rows.append([
+            if quality_org_data.get("scopeWithRatingsDtos"):
+                rating_details = quality_org_data["scopeWithRatingsDtos"][0]["ratingDetailsDto"][0]
+                quality_info_rows.append([
                     agency_id,
                     get_optional_field_value(org_name),
                     get_optional_field_value(short_org_name),
-                    "Услуги",
-                    agencies_tasks[i]["itemData"],
-                    agencies_tasks[i + 1]["itemData"],
-                    agencies_tasks[i + 2]["itemData"]
+                    year,
+                    quality_org_data["ratingYear"],
+                    get_optional_field_value(
+                        rating_details["organizationGroup"]["groupName"]
+                        if rating_details["organizationGroup"] else None),
+                    get_optional_field_value(rating_details["globalPlaceValue"]),
+                    get_optional_field_value(rating_details["opennessValue"]),
+                    get_optional_field_value(rating_details["comfortValue"]),
+                    get_optional_field_value(rating_details["timeoutValue"]),
+                    get_optional_field_value(rating_details["goodwillValue"]),
+                    get_optional_field_value(rating_details["contentmentValue"])
                 ])
 
-        agencies_works = current_org.get("agenciesWorks", {}).get(f"value_{agency_id}", [])
-        for i in range(0, len(agencies_works), 2):
-            if "itemData" in agencies_works[i] and agencies_works[i]["itemData"]:
-                building_exec_info_rows.append([
+            agencies_tasks = current_org.get("agenciesTasks", {}).get(f"value_{agency_id}", [])
+            for i in range(0, len(agencies_tasks), 3):
+                if "itemData" in agencies_tasks[i]:
+                    building_exec_info_rows.append([
+                        agency_id,
+                        get_optional_field_value(org_name),
+                        get_optional_field_value(short_org_name),
+                        year,
+                        "Услуги",
+                        agencies_tasks[i]["itemData"],
+                        agencies_tasks[i + 1]["itemData"],
+                        agencies_tasks[i + 2]["itemData"]
+                    ])
+
+            agencies_works = current_org.get("agenciesWorks", {}).get(f"value_{agency_id}", [])
+            for i in range(0, len(agencies_works), 2):
+                if "itemData" in agencies_works[i] and agencies_works[i]["itemData"]:
+                    building_exec_info_rows.append([
+                        agency_id,
+                        get_optional_field_value(org_name),
+                        get_optional_field_value(short_org_name),
+                        year,
+                        "Работы",
+                        agencies_works[i]["itemData"],
+                        agencies_works[i + 1]["itemData"],
+                        "-"
+                    ])
+
+            for funds_budget_op in current_org.get("budgetInvestmentsTable"):
+                targeted_funds_ops_budget_rows.append([
                     agency_id,
                     get_optional_field_value(org_name),
                     get_optional_field_value(short_org_name),
-                    "Работы",
-                    agencies_works[i]["itemData"],
-                    agencies_works[i + 1]["itemData"],
-                    "-"
+                    current_org["budgetOperation"]["budget.operation.okato"][0],
+                    current_org["budgetOperation"]["budget.operation.year"][0],
+                    current_org["budgetOperation"]["budget.operation.sum.planned.all"][0],
+                    current_org["budgetOperation"]["budget.operation.subsidies.all"][0],
+                    funds_budget_op[0]["name"],
+                    funds_budget_op[0]["sum"],
                 ])
 
-        for funds_budget_op in current_org.get("budgetInvestmentsTable"):
-            targeted_funds_ops_budget_rows.append([
-                agency_id,
-                get_optional_field_value(org_name),
-                get_optional_field_value(short_org_name),
-                current_org["budgetOperation"]["budget.operation.okato"][0],
-                current_org["budgetOperation"]["budget.operation.year"][0],
-                current_org["budgetOperation"]["budget.operation.sum.planned.all"][0],
-                current_org["budgetOperation"]["budget.operation.subsidies.all"][0],
-                funds_budget_op[0]["name"],
-                funds_budget_op[0]["sum"],
+            for funds_subsidies_op in current_org.get("budgetSubsidiesTable"):
+                targeted_funds_ops_subsidies_rows.append([
+                    agency_id,
+                    get_optional_field_value(org_name),
+                    get_optional_field_value(short_org_name),
+                    current_org["budgetOperation"]["budget.operation.okato"][0],
+                    current_org["budgetOperation"]["budget.operation.year"][0],
+                    current_org["budgetOperation"]["budget.operation.sum.planned.all"][0],
+                    current_org["budgetOperation"]["budget.operation.subsidies.all"][0],
+                    funds_subsidies_op["code"][0],
+                    funds_subsidies_op["grantName"][0],
+                    funds_subsidies_op["sumPlannedReceips"][0]
+                ])
+
+        for org in download_data_result["unavailableOrgsBasicData"][year]:
+            unavailable_orgs_rows.append([
+                org["agencyId"],
+                org["fullName"],
+                year,
+                org["fullAddress"],
+                org["phone"],
+                org["webSite"]
             ])
 
-        for funds_subsidies_op in current_org.get("budgetSubsidiesTable"):
-            targeted_funds_ops_subsidies_rows.append([
-                agency_id,
-                get_optional_field_value(org_name),
-                get_optional_field_value(short_org_name),
-                current_org["budgetOperation"]["budget.operation.okato"][0],
-                current_org["budgetOperation"]["budget.operation.year"][0],
-                current_org["budgetOperation"]["budget.operation.sum.planned.all"][0],
-                current_org["budgetOperation"]["budget.operation.subsidies.all"][0],
-                funds_subsidies_op["code"][0],
-                funds_subsidies_op["grantName"][0],
-                funds_subsidies_op["sumPlannedReceips"][0]
-            ])
-
-    for org in download_data_result["unavailableOrgsBasicData"]:
-        unavailable_orgs_rows.append([
-            org["agencyId"],
-            org["fullName"],
-            org["fullAddress"],
-            org["phone"],
-            org["webSite"]
-        ])
-
-    workbook = xlsxwriter.Workbook(f"Данные bus.gov.ru от {datetime.now().strftime('%d.%m.%Y %H:%M')}.xlsx")
+    workbook = xlsxwriter.Workbook(f"Данные bus.gov.ru от {datetime.now().strftime('%d.%m.%Y')}.xlsx")
 
     write_sheet(workbook, "Общая информация", basic_orgs_data_rows, BASIC_ORGS_HEADERS)
     write_sheet(workbook, "Независимая оценка качества", quality_info_rows, QUALITY_ORGS_HEADERS)
